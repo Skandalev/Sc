@@ -9,8 +9,8 @@ const login = async (page) => {
   await page.goto('https://www.aladincorp.com/login', { waitUntil: 'networkidle2' });
 
   // Replace with provided username and password
-  await page.type('#eael-user-login', '854549');
-  await page.type('#eael-user-password', '854549@!@2024');
+  await page.type('#eael-user-login', 'xxxxx');
+  await page.type('#eael-user-password', 'xxxxxx');
 
   // Uncomment the following lines if "Remember Me" checkbox needs to be checked
   // await page.click('#rememberme');
