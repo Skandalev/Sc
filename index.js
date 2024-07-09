@@ -4,82 +4,88 @@ const puppeteer = require('puppeteer');
 const app = express();
 const port = 3000;
 
-app.use(express.json());
+// Function to log in using Puppeteer
+const login = async (page) => {
+  await page.goto('https://www.aladincorp.com/login', { waitUntil: 'networkidle2' });
 
-let products = [];
+  // Replace with provided username and password
+  await page.type('#eael-user-login', '854549');
+  await page.type('#eael-user-password', '854549@!@2024');
 
-// Endpoint to trigger scraping
-app.post('/scrape', async (req, res) => {
-    const url = 'xxxxxx'; // Replace with your stable URL
+  // Uncomment the following lines if "Remember Me" checkbox needs to be checked
+  // await page.click('#rememberme');
 
-    try {
-        products = await scrapeWebsite(url);
-        console.log(products);
-        res.status(200).send(products);
-    } catch (error) {
-        console.error('Error during scraping:', error);
-        res.status(500).send({ error: error.message });
-    }
-});
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: 'networkidle2' }),
+    page.click('#eael-login-submit')
+  ]);
 
-// Read (R)
-app.get('/products', (req, res) => {
-    res.status(200).send(products);
-});
+  console.log('Logged in successfully!');
+};
 
-// Update (U)
-app.put('/products/:id', (req, res) => {
-    const { id } = req.params;
-    const { name, description } = req.body;
-
-    const product = products.find(p => p.id === id);
-    if (product) {
-        product.name = name;
-        product.description = description;
-        res.status(200).send(product);
-    } else {
-        res.status(404).send({ error: 'Product not found' });
-    }
-});
-
-// Delete (D)
-app.delete('/products/:id', (req, res) => {
-    const { id } = req.params;
-    const index = products.findIndex(p => p.id === id);
-
-    if (index !== -1) {
-        products.splice(index, 1);
-        res.status(200).send({ message: 'Product deleted' });
-    } else {
-        res.status(404).send({ error: 'Product not found' });
-    }
-});
-
-async function scrapeWebsite(url) {
+app.get('/scrape', async (req, res) => {
+  try {
     const browser = await puppeteer.launch();
     const page = await browser.newPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
-    // Adjust the selector based on the structure of the website you are scraping
-    const scrapedProducts = await page.evaluate(() => {
-        const productElements = document.querySelectorAll('.jet-listing-grid__item'); // Adjust the selector to match your website's structure
-        return Array.from(productElements).map((product, index) => {
-            const nameElement = product.querySelector('.elementor-element-b989ae5 h2.elementor-heading-title a'); // Adjust the selector
-            const descriptionElement = product.querySelector('.elementor-element-af38a72 .elementor-widget-container'); // Adjust the selector
-            const imageElement = product.querySelector('.jet-listing-dynamic-image__img');
-            return {
-                id: String(index), // Assign a unique ID for each product
-                name: nameElement ? nameElement.innerText : 'No name found',
-                img: imageElement ? imageElement.src: 'no img found',
-                description: descriptionElement ? descriptionElement.innerText : 'No description found'
-            };
-        });
+    // Log in before proceeding to scrape
+    await login(page);
+
+    // Once logged in, navigate to the desired page to scrape
+    await page.goto('https://www.aladincorp.com/shop', { waitUntil: 'networkidle2' });
+
+    // Wait for the product elements to load
+    await page.waitForSelector('.jet-listing-grid__item');
+
+    // Scrape product information
+    const products = await page.evaluate(() => {
+      const productElements = document.querySelectorAll('.jet-listing-grid__item');
+      return Array.from(productElements).map(el => {
+        const titleElement = el.querySelector('.elementor-heading-title.elementor-size-default a');
+        const imageElement = el.querySelector('.jet-listing-dynamic-image__img');
+        const priceElement = el.querySelector('.elementor-element-6900ad8 .woocommerce-Price-amount bdi');
+
+        // Extract itemNumber using regex
+        const itemNumberElement = el.querySelector('.elementor-element-af38a72 .elementor-widget-container');
+        let itemNumber = null;
+        if (itemNumberElement) {
+          const textContent = itemNumberElement.textContent.trim();
+          const match = textContent.match(/מק״ט\s*:\s*(\S+)/);
+          if (match && match.length > 1) {
+            itemNumber = match[1];
+          }
+        }
+
+        // Extract price information using regex
+        let price = null;
+        if (priceElement) {
+          const priceText = priceElement.textContent.trim();
+          const regex = /₪\s*([\d,]+)/;
+          const match = priceText.match(regex);
+          if (match && match.length > 1) {
+            const priceValue = match[1].replace(',', ''); // Remove commas from the price string
+            price = parseFloat(priceValue);
+          }
+        }
+
+        return {
+          title: titleElement ? titleElement.textContent.trim() : null,
+          image: imageElement ? imageElement.src : null,
+          price: price !== null ? price : null,
+          itemNumber: itemNumber
+        };
+      });
     });
 
     await browser.close();
-    return scrapedProducts;
-}
+
+    res.json({ products });
+  } catch (error) {
+    console.error('Scraping failed:', error);
+    res.status(500).json({ error: 'Scraping failed' });
+  }
+});
 
 app.listen(port, () => {
-    console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server running at http://localhost:${port}`);
 });
